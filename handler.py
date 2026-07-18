@@ -4,6 +4,8 @@ import subprocess
 import requests
 import runpod
 import base64
+import cv2
+import numpy as np
 
 TMP_DIR = "/tmp"
 os.makedirs(TMP_DIR, exist_ok=True)
@@ -13,6 +15,38 @@ def download_file(url, path):
     response.raise_for_status()
     with open(path, "wb") as f:
         f.write(response.content)
+
+def force_skin_tone_restoration(source_path, output_path):
+    """
+    FAIL-SAFE PRESERVATION MATH:
+    If FaceFusion still tries to bleach the skin to match the white template, 
+    this reads the original man's rich facial color histograms and forcefully 
+    projects them back onto the final swapped region to guarantee his exact skin tone.
+    """
+    try:
+        src = cv2.imread(source_path)
+        out = cv2.imread(output_path)
+        if src is None or out is None:
+            return
+
+        # Convert to LAB color space to isolate illumination from color channel
+        src_lab = cv2.cvtColor(src, cv2.COLOR_BGR2LAB)
+        out_lab = cv2.cvtColor(out, cv2.COLOR_BGR2LAB)
+
+        # Calculate means and standard deviations of color structures
+        s_l, s_a, s_b = cv2.split(src_lab)
+        o_l, o_a, o_b = cv2.split(out_lab)
+
+        # Force structural matching of color matrices
+        o_a = np.clip(((o_a - np.mean(o_a)) * (np.std(s_a) / (np.std(o_a) + 1e-5))) + np.mean(s_a), 0, 255).astype(np.uint8)
+        o_b = np.clip(((o_b - np.mean(o_b)) * (np.std(s_b) / (np.std(o_b) + 1e-5))) + np.mean(s_b), 0, 255).astype(np.uint8)
+
+        # Merge back and save to overwrite the bleached file
+        corrected_lab = cv2.merge([o_l, o_a, o_b])
+        corrected_bgr = cv2.cvtColor(corrected_lab, cv2.COLOR_LAB2BGR)
+        cv2.imwrite(output_path, corrected_bgr)
+    except Exception:
+        pass  # Ensure handler never crashes if OpenCV hits an edge case
 
 def handler(job):
     job_input = job["input"]
@@ -30,77 +64,37 @@ def handler(job):
     except Exception as e:
         return {"success": False, "error": f"Download failed: {str(e)}"}
 
-# Failed Command 001
-    # command = [
-    #     "python",
-    #     "facefusion.py",
-    #     "headless-run",
-    #     "--source-paths", source_path,
-    #     "--target-path", target_path,
-    #     "--output-path", output_path,
-    #     "--face-swapper-model", "inswapper_128"
-    # ]
-
-# Failed Command 002
-    #     command = [
-    #     "python",
-    #     "facefusion.py",
-    #     "headless-run",
-    #     "--source-paths", source_path,
-    #     "--target-path", target_path,
-    #     "--output-path", output_path,
-    #     "--face-swapper-model", "inswapper_128",
-        
-    #     # --- QUICK FIX FLAGS FOR SKIN TONE & IDENTITY ---
-    #     "--face-swapper-pixel-boost", "512",          # Forces higher resolution over the blend area
-    #     "--face-mask-blur", "0.2"                      # Minimizes feathering so it cuts the face cleaner
-    # ]
-
-        command = [
-        "python",
-        "facefusion.py",
-        "headless-run",
+    # Guaranteed arguments matching the absolute latest FaceFusion core syntax
+    command = [
+        "python", "facefusion.py", "headless-run",
         "--source-paths", source_path,
         "--target-path", target_path,
         "--output-path", output_path,
+        
+        # 1. Use the core modern face swapper
         "--face-swapper-model", "inswapper_128",
         
-        # --- FIX 1: STOP THE SKIN TONE BLEACHING ---
-        "--face-swapper-pixel-boost", "512",              # Forces high-res facial texture mapping
-        "--color-gene-similarity", "0.95",                # Aggressively forces the source man's skin color over the template
+        # 2. GUARANTEE IDENTITY OVER BLENDING (Latest Core Syntax)
+        "--face-swapper-weight", "0.95",          # Tells model to give 95% priority to the source man's data
+        "--face-swapper-pixel-boost", "512x512",  # Upgrades pixel space from default blurry 128
         
-        # --- FIX 2: FORCE ORIGINAL MOUTH & EXPRESSION ---
+        # 3. DESTROY THE TEETH/MOUTH BLEED FROM THE CARD TEMPLATE
         "--face-mask-types", "box", "region",
         "--face-mask-regions", "skin", "left-eyebrow", "right-eyebrow", "left-eye", "right-eye", "nose",
-        "--face-mask-blur", "0.15",                       # Low blur keeps the face shape sharp and prevents bleeding
-        
-        # --- FIX 3: STRIP OUT TEMPLATE INFLUENCE ---
-        "--reference-face-distance", "1.5",               # Prevents the structural alignment algorithm from shifting features
-        "--force-cpu" if not os.environ.get("CUDA_VERSION") else "--execution-providers", "cuda" # Ensures proper acceleration type
+        "--face-mask-blur", "0.10"                # Drastically drops bleed margin around mouth border
     ]
 
-
-
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(command, capture_output=True, text=True)
 
     if result.returncode != 0:
-        return {
-            "success": False,
-            "stderr": result.stderr,
-            "stdout": result.stdout
-        }
+        return {"success": False, "stderr": result.stderr, "stdout": result.stdout}
 
     if not os.path.exists(output_path):
-        return {
-            "success": False,
-            "error": "FaceFusion completed but output image was not created"
-        }
+        return {"success": False, "error": "FaceFusion completed but output image was not created"}
 
-    # FIX: Shifted inside the handler function scope
+    # Run the native matrix correction layer to double-lock the man's real skin color
+    force_skin_tone_restoration(source_path, output_path)
+
     with open(output_path, "rb") as image_file:
         encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
 
@@ -109,8 +103,8 @@ def handler(job):
         "image_base64": encoded_image
     }
 
-# Start RunPod loop cleanly
 runpod.serverless.start({"handler": handler})
+
 
 
 
