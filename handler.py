@@ -30,6 +30,7 @@ def handler(job):
     except Exception as e:
         return {"success": False, "error": f"Download failed: {str(e)}"}
 
+# Failed Command 001
     # command = [
     #     "python",
     #     "facefusion.py",
@@ -38,6 +39,21 @@ def handler(job):
     #     "--target-path", target_path,
     #     "--output-path", output_path,
     #     "--face-swapper-model", "inswapper_128"
+    # ]
+
+# Failed Command 002
+    #     command = [
+    #     "python",
+    #     "facefusion.py",
+    #     "headless-run",
+    #     "--source-paths", source_path,
+    #     "--target-path", target_path,
+    #     "--output-path", output_path,
+    #     "--face-swapper-model", "inswapper_128",
+        
+    #     # --- QUICK FIX FLAGS FOR SKIN TONE & IDENTITY ---
+    #     "--face-swapper-pixel-boost", "512",          # Forces higher resolution over the blend area
+    #     "--face-mask-blur", "0.2"                      # Minimizes feathering so it cuts the face cleaner
     # ]
 
         command = [
@@ -49,10 +65,20 @@ def handler(job):
         "--output-path", output_path,
         "--face-swapper-model", "inswapper_128",
         
-        # --- QUICK FIX FLAGS FOR SKIN TONE & IDENTITY ---
-        "--face-swapper-pixel-boost", "512",          # Forces higher resolution over the blend area
-        "--face-mask-blur", "0.2"                      # Minimizes feathering so it cuts the face cleaner
+        # --- FIX 1: STOP THE SKIN TONE BLEACHING ---
+        "--face-swapper-pixel-boost", "512",              # Forces high-res facial texture mapping
+        "--color-gene-similarity", "0.95",                # Aggressively forces the source man's skin color over the template
+        
+        # --- FIX 2: FORCE ORIGINAL MOUTH & EXPRESSION ---
+        "--face-mask-types", "box", "region",
+        "--face-mask-regions", "skin", "left-eyebrow", "right-eyebrow", "left-eye", "right-eye", "nose",
+        "--face-mask-blur", "0.15",                       # Low blur keeps the face shape sharp and prevents bleeding
+        
+        # --- FIX 3: STRIP OUT TEMPLATE INFLUENCE ---
+        "--reference-face-distance", "1.5",               # Prevents the structural alignment algorithm from shifting features
+        "--force-cpu" if not os.environ.get("CUDA_VERSION") else "--execution-providers", "cuda" # Ensures proper acceleration type
     ]
+
 
 
     result = subprocess.run(
