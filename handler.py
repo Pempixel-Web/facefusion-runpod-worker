@@ -30,15 +30,30 @@ def handler(job):
     except Exception as e:
         return {"success": False, "error": f"Download failed: {str(e)}"}
 
-    command = [
+    # command = [
+    #     "python",
+    #     "facefusion.py",
+    #     "headless-run",
+    #     "--source-paths", source_path,
+    #     "--target-path", target_path,
+    #     "--output-path", output_path,
+    #     "--face-swapper-model", "inswapper_128"
+    # ]
+
+        command = [
         "python",
         "facefusion.py",
         "headless-run",
         "--source-paths", source_path,
         "--target-path", target_path,
         "--output-path", output_path,
-        "--face-swapper-model", "inswapper_128"
+        "--face-swapper-model", "inswapper_128",
+        
+        # --- QUICK FIX FLAGS FOR SKIN TONE & IDENTITY ---
+        "--face-swapper-pixel-boost", "512",          # Forces higher resolution over the blend area
+        "--face-mask-blur", "0.2"                      # Minimizes feathering so it cuts the face cleaner
     ]
+
 
     result = subprocess.run(
         command,
