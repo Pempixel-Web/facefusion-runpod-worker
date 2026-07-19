@@ -24,4 +24,5 @@ jobs:
         with:
           context: .
           push: true
-          tags: pempixel/facefusion-runpod-worker:latest
+          # tags: pempixel/facefusion-runpod-worker:latest
+          tags: pempixel/facefusion-runpod-worker:v2
