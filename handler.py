@@ -41,19 +41,12 @@ def handler(job):
         download_file(source_url, source_path)
         download_file(target_url, target_path)
 
-        command = [
-            "python",
-            "facefusion.py",
-            "headless-run",
-            "--config-path",
-            "facefusion.ini",
-            "--source-paths",
-            source_path,
-            "--target-path",
-            target_path,
-            "--output-path",
-            output_path
-        ]
+command = [
+    "python",
+    "facefusion.py",
+    "headless-run",
+    "--help"
+]
 
         result = subprocess.run(
             command,
