@@ -20,8 +20,6 @@ RUN python -m pip install --upgrade pip
 
 RUN python install.py default --skip-conda
 
-RUN python facefusion.py headless-run --help
-
 RUN pip install -r requirements-runpod.txt
 
 CMD ["python", "handler.py"]
