@@ -18,6 +18,10 @@ def download_file(url, path):
 
 
 def handler(job):
+    source_path = None
+    target_path = None
+    output_path = None
+
     try:
         job_input = job["input"]
 
@@ -41,16 +45,12 @@ def handler(job):
             "python",
             "facefusion.py",
             "headless-run",
-
             "--config-path",
             "facefusion.ini",
-
             "--source-paths",
             source_path,
-
             "--target-path",
             target_path,
-
             "--output-path",
             output_path
         ]
@@ -58,21 +58,25 @@ def handler(job):
         result = subprocess.run(
             command,
             capture_output=True,
-            text=True
+            text=True,
+            timeout=600
         )
 
         if result.returncode != 0:
             return {
                 "success": False,
                 "error": "FaceFusion execution failed.",
+                "returncode": result.returncode,
                 "stdout": result.stdout,
-                "stderr": result.stderr
+                "stderr": result.stderr,
+                "command": " ".join(command),
+                "cwd": os.getcwd()
             }
 
         if not os.path.exists(output_path):
             return {
                 "success": False,
-                "error": "Output image was not created.",
+                "error": "FaceFusion finished but output image was not created.",
                 "stdout": result.stdout,
                 "stderr": result.stderr
             }
@@ -82,14 +86,15 @@ def handler(job):
                 image_file.read()
             ).decode("utf-8")
 
-        # Cleanup
-        for file in [source_path, target_path, output_path]:
-            if os.path.exists(file):
-                os.remove(file)
-
         return {
             "success": True,
             "image_base64": image_base64
+        }
+
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "error": "FaceFusion timed out after 600 seconds."
         }
 
     except Exception as e:
@@ -97,6 +102,14 @@ def handler(job):
             "success": False,
             "error": str(e)
         }
+
+    finally:
+        for file in [source_path, target_path, output_path]:
+            if file and os.path.exists(file):
+                try:
+                    os.remove(file)
+                except:
+                    pass
 
 
 runpod.serverless.start({"handler": handler})
